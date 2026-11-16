@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paisagem sonora</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&display=swap">
+<style>
+:root{--bg:#e9eee8;--ink:#1c2a29;--mute:#5d6f6c;--card:#f7faf6;--line:#c3cfc9;--acc:#1f6f64;--rec:#d63b2f;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101b1a;--ink:#e4eeea;--mute:#8fa5a0;--card:#1a2927;--line:#334743;--acc:#5cc4b3;--rec:#ff6a5c}}
+:root[data-theme="dark"]{--bg:#101b1a;--ink:#e4eeea;--mute:#8fa5a0;--card:#1a2927;--line:#334743;--acc:#5cc4b3;--rec:#ff6a5c}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Familjen Grotesk",system-ui,sans-serif;display:flex;flex-direction:column;gap:10px;padding:12px;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1{font-size:1.05rem;margin:0;font-weight:700}
+.modes{display:flex;border:1.5px solid var(--line);border-radius:999px;overflow:hidden}
+.modes button{border:0;background:none;color:var(--mute);font:inherit;font-weight:700;padding:8px 14px}
+.modes button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.modes button.r[aria-pressed=true]{background:var(--rec);color:#fff}
+#msg{min-height:1.3em;font-size:.9rem;color:var(--mute);margin:0}
+#grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(4,1fr);gap:10px}
+@media (orientation:landscape){#grid{grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr)}}
+.pad{position:relative;border-radius:18px;border:2px dashed var(--line);background:transparent;color:var(--mute);font:inherit;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;overflow:hidden;min-height:0}
+.pad.full{border:0;background:hsl(var(--h) 52% 52%);color:#fff;box-shadow:inset 0 -5px 0 rgba(0,0,0,.18)}
+.pad small{font-weight:500;opacity:.85}
+.pad.on{filter:brightness(1.25);transform:scale(.97)}
+.pad.rec{border:2px solid var(--rec);color:var(--rec);animation:pulse 1s infinite}
+.pad.sel{outline:3px solid var(--ink);outline-offset:2px}
+@keyframes pulse{50%{background:color-mix(in srgb,var(--rec) 18%,transparent)}}
+@media (prefers-reduced-motion:reduce){.pad.rec{animation:none;background:color-mix(in srgb,var(--rec) 18%,transparent)}}
+#sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-radius:22px 22px 0 0;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -8px 30px rgba(0,0,0,.28);display:none;flex-direction:column;gap:8px;max-height:80%;overflow:auto}
+#sheet.open{display:flex}
+canvas{width:100%;height:80px;border-radius:10px;background:var(--bg)}
+.row{display:grid;grid-template-columns:78px 1fr;align-items:center;gap:8px;font-size:.9rem}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btns button{flex:1;min-width:30%;font:inherit;font-weight:700;padding:11px 8px;border-radius:12px;border:1.5px solid var(--line);background:none;color:var(--ink)}
+.btns button[aria-pressed=true]{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.btns .del{color:var(--rec);border-color:var(--rec)}
+.btns .ok{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Paisagem sonora</h1>
+  <div class="modes" role="group" aria-label="Modo">
+    <button data-m="play" aria-pressed="true">Tocar</button>
+    <button data-m="rec" class="r" aria-pressed="false">Gravar</button>
+    <button data-m="edit" aria-pressed="false">Editar</button>
+  </div>
+</header>
+<p id="msg">Muda para Gravar e toca num quadrado para captar um som.</p>
+<main id="grid"></main>
+
+<section id="sheet" aria-label="Editar som">
+  <canvas id="wave"></canvas>
+  <div class="row"><label for="s">Início</label><input id="s" type="range" min="0" max="1000"></div>
+  <div class="row"><label for="e">Fim</label><input id="e" type="range" min="0" max="1000"></div>
+  <div class="row"><label for="v">Volume</label><input id="v" type="range" min="0" max="150"></div>
+  <div class="row"><label for="r">Velocidade</label><input id="r" type="range" min="25" max="200"></div>
+  <div class="btns">
+    <button id="bRev" aria-pressed="false">Inverter</button>
+    <button id="bLoop" aria-pressed="false">Repetir</button>
+    <button id="bPlay">Ouvir</button>
+    <button id="bDel" class="del">Apagar</button>
+    <button id="bOk" class="ok">Fechar</button>
+  </div>
+</section>
+
+<script>
+const N=12, MAX=20;
+const $=s=>document.querySelector(s);
+const grid=$('#grid'), msg=$('#msg'), sheet=$('#sheet'), wave=$('#wave');
+let mode='play', ctx=null, db=null, sel=-1, rec=null;
+const pads=Array.from({length:N},()=>null);
+const active={};
+const els=[];
+
+const say=t=>{msg.textContent=t};
+const fmt=s=>s.toFixed(1).replace('.',',')+' s';
+
+/* ---------- storage ---------- */
+function openDB(){return new Promise(res=>{
+  try{const q=indexedDB.open('paisagem-sonora',1);
+    q.onupgradeneeded=()=>q.result.createObjectStore('pads',{keyPath:'id'});
+    q.onsuccess=()=>{db=q.result;res()};q.onerror=()=>res();
+  }catch(e){res()}});}
+function dbPut(i){const p=pads[i];if(!db||!p)return;
+  try{db.transaction('pads','readwrite').objectStore('pads').put({id:i,blob:p.blob,start:p.start,end:p.end,vol:p.vol,rate:p.rate,reverse:p.reverse,loop:p.loop});}catch(e){}}
+function dbDel(i){if(!db)return;try{db.transaction('pads','readwrite').objectStore('pads').delete(i)}catch(e){}}
+function dbAll(){return new Promise(res=>{if(!db)return res([]);
+  try{const q=db.transaction('pads').objectStore('pads').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);}catch(e){res([])}});}
+let saveT;const saveSoon=i=>{clearTimeout(saveT);saveT=setTimeout(()=>dbPut(i),300)};
+
+/* ---------- audio ---------- */
+function ac(){if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume();return ctx}
+function reverseBuf(b){const o=ac().createBuffer(b.numberOfChannels,b.length,b.sampleRate);
+  for(let c=0;c<b.numberOfChannels;c++){const a=b.getChannelData(c),d=o.getChannelData(c);for(let i=0;i<a.length;i++)d[i]=a[a.length-1-i]}return o}
+async function makePad(blob,o={}){
+  const buf=await ac().decodeAudioData(await blob.arrayBuffer());
+  const p={blob,buf,rev:null,start:0,end:1,vol:1,rate:1,reverse:false,loop:false,...o};
+  if(p.reverse)p.rev=reverseBuf(buf);return p;}
+const curBuf=p=>p.reverse?(p.rev||(p.rev=reverseBuf(p.buf))):p.buf;
+
+function stopPad(i){const a=active[i];if(!a)return;try{a.src.onended=null;a.src.stop()}catch(e){}delete active[i];els[i].classList.remove('on')}
+function playPad(i){
+  const p=pads[i];if(!p)return;
+  if(active[i]&&p.loop){stopPad(i);return}
+  stopPad(i);
+  const c=ac(),b=curBuf(p),src=c.createBufferSource(),g=c.createGain();
+  src.buffer=b;src.playbackRate.value=p.rate;g.gain.value=p.vol;
+  const s=p.start*b.duration,e=p.end*b.duration;
+  if(p.loop){src.loop=true;src.loopStart=s;src.loopEnd=e;src.start(0,s)}else src.start(0,s,Math.max(.02,e-s));
+  src.connect(g).connect(c.destination);
+  active[i]={src,g};els[i].classList.add('on');
+  src.onended=()=>{if(active[i]&&active[i].src===src){delete active[i];els[i].classList.remove('on')}};
+}
+function live(i){const a=active[i],p=pads[i];if(!a||!p)return;
+  a.g.gain.value=p.vol;a.src.playbackRate.value=p.rate;
+  if(p.loop){const d=curBuf(p).duration;a.src.loopStart=p.start*d;a.src.loopEnd=p.end*d}}
+
+/* ---------- recording ---------- */
+async function startRec(i){
+  ac();
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+  catch(e){say('Sem acesso ao microfone. Autoriza o microfone nas definições do navegador.');return}
+  const mr=new MediaRecorder(stream),chunks=[];
+  rec={i,mr,t0:performance.now()};
+  mr.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  mr.onstop=async()=>{
+    clearInterval(rec.tick);clearTimeout(rec.cut);stream.getTracks().forEach(t=>t.stop());
+    const idx=rec.i;rec=null;els[idx].classList.remove('rec');
+    try{stopPad(idx);pads[idx]=await makePad(new Blob(chunks,{type:mr.mimeType}));dbPut(idx);say('Guardado. Toca outra vez para gravar por cima, ou muda para Tocar.')}
+    catch(e){say('Não consegui ler esta gravação. Tenta outra vez.')}
+    render(idx);};
+  mr.start();
+  els[i].classList.add('rec');
+  rec.tick=setInterval(()=>{const t=(performance.now()-rec.t0)/1000;els[i].innerHTML='<span>A gravar</span><small>'+fmt(t)+' / '+MAX+' s</small>'},100);
+  rec.cut=setTimeout(()=>stopRec(),MAX*1000);
+  say('A gravar… toca no quadrado para parar.');
+}
+function stopRec(){if(rec&&rec.mr.state!=='inactive')rec.mr.stop()}
+
+/* ---------- grid ---------- */
+function render(i){const el=els[i],p=pads[i];
+  el.classList.toggle('full',!!p);el.classList.toggle('sel',i===sel);
+  el.innerHTML=p?'<span>Som</span><small>'+fmt(p.buf.duration)+'</small>':'<span>vazio</span>';}
+for(let i=0;i<N;i++){
+  const b=document.createElement('button');b.className='pad';b.style.setProperty('--h',(i*30+160)%360);
+  b.setAttribute('aria-label','Quadrado '+(i+1));
+  b.addEventListener('pointerdown',e=>{e.preventDefault();tap(i)});
+  grid.appendChild(b);els.push(b);render(i);}
+function tap(i){
+  if(mode==='rec'){
+    if(rec){if(rec.i===i)stopRec();return}
+    startRec(i);return}
+  if(mode==='edit'){if(pads[i])openEditor(i);else say('Este quadrado está vazio. Grava primeiro.');return}
+  if(pads[i])playPad(i);else say('Vazio. Muda para Gravar para captar um som.');
+}
+document.querySelectorAll('.modes button').forEach(b=>b.addEventListener('click',()=>{
+  if(rec)stopRec();
+  mode=b.dataset.m;
+  document.querySelectorAll('.modes button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  closeEditor();
+  say(mode==='rec'?'Toca num quadrado para gravar até 20 segundos.':mode==='edit'?'Toca num som para o editar.':'Toca nos quadrados para ouvir.');}));
+
+/* ---------- editor ---------- */
+function drawWave(){
+  const p=pads[sel];if(!p)return;
+  const dpr=devicePixelRatio||1,w=wave.clientWidth*dpr,h=wave.clientHeight*dpr;
+  wave.width=w;wave.height=h;const g=wave.getContext('2d'),d=curBuf(p).getChannelData(0);
+  const cs=getComputedStyle(document.documentElement),col=cs.getPropertyValue('--acc'),mute=cs.getPropertyValue('--line');
+  const step=Math.max(1,Math.floor(d.length/(w/3)));
+  for(let x=0,k=0;x<w;x+=3,k++){let m=0;for(let j=0;j<step;j++){const v=Math.abs(d[k*step+j]||0);if(v>m)m=v}
+    const f=x/w;g.fillStyle=(f>=p.start&&f<=p.end)?col:mute;const bh=Math.max(2,m*h*.95);g.fillRect(x,(h-bh)/2,2*dpr,bh);}
+}
+function syncUI(){const p=pads[sel];
+  $('#s').value=p.start*1000;$('#e').value=p.end*1000;$('#v').value=p.vol*100;$('#r').value=p.rate*100;
+  $('#bRev').setAttribute('aria-pressed',p.reverse);$('#bLoop').setAttribute('aria-pressed',p.loop);drawWave();}
+function openEditor(i){sel=i;els.forEach((_,k)=>render(k));sheet.classList.add('open');syncUI();playPad(i)}
+function closeEditor(){sheet.classList.remove('open');const o=sel;sel=-1;if(o>=0)render(o)}
+function edit(fn){if(sel<0)return;const p=pads[sel];fn(p);live(sel);saveSoon(sel);drawWave()}
+$('#s').oninput=e=>edit(p=>p.start=Math.min(e.target.value/1000,p.end-.01));
+$('#e').oninput=e=>edit(p=>p.end=Math.max(e.target.value/1000,p.start+.01));
+$('#v').oninput=e=>edit(p=>p.vol=e.target.value/100);
+$('#r').oninput=e=>edit(p=>p.rate=e.target.value/100);
+$('#bRev').onclick=()=>{edit(p=>{p.reverse=!p.reverse;const s=p.start;p.start=1-p.end;p.end=1-s});stopPad(sel);syncUI();playPad(sel)};
+$('#bLoop').onclick=()=>{edit(p=>p.loop=!p.loop);stopPad(sel);syncUI()};
+$('#bPlay').onclick=()=>playPad(sel);
+$('#bOk').onclick=closeEditor;
+$('#bDel').onclick=()=>{const i=sel;stopPad(i);pads[i]=null;dbDel(i);closeEditor();render(i);say('Som apagado.')};
+
+/* ---------- arranque ---------- */
+(async()=>{
+  await openDB();
+  for(const r of await dbAll()){try{pads[r.id]=await makePad(r.blob,r);render(r.id)}catch(e){}}
+})();
+</script>
+</body>
+</html>
